@@ -1,0 +1,736 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kinetic Concentric Ring Mobile - 3D Interactive Simulation</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: #14161a;
+    color: #f0f2f5;
+    overflow: hidden;
+    user-select: none;
+  }
+  canvas {
+    display: block;
+    width: 100vw;
+    height: 100vh;
+    cursor: grab;
+  }
+  canvas:active { cursor: grabbing; }
+  #ui-panel {
+    position: absolute;
+    top: 16px;
+    left: 16px;
+    width: 300px;
+    background: rgba(24, 27, 33, 0.88);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 12px;
+    padding: 16px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
+  }
+  h1 {
+    font-size: 15px;
+    font-weight: 600;
+    margin-bottom: 4px;
+    color: #ffffff;
+  }
+  .subtitle {
+    font-size: 12px;
+    color: #9aa4b2;
+    margin-bottom: 14px;
+    line-height: 1.4;
+  }
+  .control-group {
+    margin-bottom: 12px;
+  }
+  .control-header {
+    display: flex;
+    justify-content: space-between;
+    font-size: 12px;
+    margin-bottom: 4px;
+    color: #cbd5e1;
+  }
+  .val {
+    font-weight: 600;
+    color: #eab308;
+    font-variant-numeric: tabular-nums;
+  }
+  input[type="range"] {
+    width: 100%;
+    accent-color: #eab308;
+    cursor: pointer;
+  }
+  select {
+    width: 100%;
+    padding: 6px 8px;
+    border-radius: 6px;
+    background: #232730;
+    color: #f8fafc;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    font-size: 12px;
+    cursor: pointer;
+  }
+  .btn-row {
+    display: flex;
+    gap: 8px;
+    margin-top: 12px;
+  }
+  button {
+    flex: 1;
+    padding: 7px 10px;
+    border-radius: 6px;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    background: #2b303b;
+    color: #f8fafc;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  button:hover { background: #383f4d; }
+  button.active {
+    background: #eab308;
+    color: #111827;
+    border-color: #eab308;
+    font-weight: 600;
+  }
+  .hint {
+    position: absolute;
+    bottom: 14px;
+    right: 16px;
+    font-size: 11px;
+    color: #8892a0;
+    background: rgba(20, 22, 26, 0.75);
+    padding: 6px 10px;
+    border-radius: 6px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+  }
+</style>
+</head>
+<body>
+
+<div id="ui-panel">
+  <h1>Kinetic 9-Ring Mobile</h1>
+  <div class="subtitle">Two solid circular plates, 3 outer posts, 27 vertical strings & internal eccentric bearing cam.</div>
+
+  <div class="control-group">
+    <div class="control-header">
+      <span>Cam Shape</span>
+    </div>
+    <select id="camShape">
+      <option value="circle" selected>Off-Center Circle (Rolling Wave)</option>
+      <option value="oval">Oval / 2-Lobe (Seesaw Rock)</option>
+      <option value="trilobe">3-Lobe Wave (Breathing Pulse)</option>
+      <option value="spiral">Stepped Spiral Cam (Cascade)</option>
+    </select>
+  </div>
+
+  <div class="control-group">
+    <div class="control-header">
+      <span>Motor Speed</span>
+      <span class="val" id="speedVal">1.2x</span>
+    </div>
+    <input type="range" id="speed" min="0" max="4" step="0.1" value="1.2">
+  </div>
+
+  <div class="control-group">
+    <div class="control-header">
+      <span>Cam Eccentricity (Throw)</span>
+      <span class="val" id="eccVal">22 mm</span>
+    </div>
+    <input type="range" id="eccentricity" min="0" max="42" step="1" value="22">
+  </div>
+
+  <div class="control-group">
+    <div class="control-header">
+      <span>String Ring Radius</span>
+      <span class="val" id="strRadVal">68 mm</span>
+    </div>
+    <input type="range" id="stringRadius" min="45" max="95" step="1" value="68">
+  </div>
+
+  <div class="control-group">
+    <div class="control-header">
+      <span>Plate Gap Height</span>
+      <span class="val" id="gapVal">150 mm</span>
+    </div>
+    <input type="range" id="plateGap" min="90" max="240" step="5" value="150">
+  </div>
+
+  <div class="btn-row">
+    <button id="viewFull" class="active">Full Sculpture</button>
+    <button id="viewCam">Zoom Cam Cage</button>
+  </div>
+  <div class="btn-row">
+    <button id="togglePause">Pause</button>
+    <button id="resetView">Reset Camera</button>
+  </div>
+</div>
+
+<div class="hint">Left-drag: Rotate &bull; Right-drag: Pan &bull; Scroll: Zoom</div>
+
+<canvas id="simCanvas"></canvas>
+
+<script>
+(function() {
+  const canvas = document.getElementById('simCanvas');
+  const ctx = canvas.getContext('2d');
+
+  let width, height, dpr;
+  function resize() {
+    dpr = window.devicePixelRatio || 1;
+    width = window.innerWidth;
+    height = window.innerHeight;
+    canvas.width = width * dpr;
+    canvas.height = height * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  // Simulation parameters
+  const state = {
+    angle: 0,
+    paused: false,
+    speed: 1.2,
+    eccentricity: 22,
+    stringRadius: 68,
+    plateGap: 150,
+    camShape: 'circle',
+    // Camera spherical coordinates
+    yaw: 0.45,
+    pitch: 0.32,
+    zoom: 1.05,
+    panX: 0,
+    panY: -40,
+    targetYaw: 0.45,
+    targetPitch: 0.32,
+    targetZoom: 1.05,
+    targetPanX: 0,
+    targetPanY: -40
+  };
+
+  // UI bindings
+  const elSpeed = document.getElementById('speed');
+  const elEcc = document.getElementById('eccentricity');
+  const elStrRad = document.getElementById('stringRadius');
+  const elGap = document.getElementById('plateGap');
+  const elShape = document.getElementById('camShape');
+
+  elSpeed.addEventListener('input', e => {
+    state.speed = parseFloat(e.target.value);
+    document.getElementById('speedVal').textContent = state.speed.toFixed(1) + 'x';
+  });
+  elEcc.addEventListener('input', e => {
+    state.eccentricity = parseFloat(e.target.value);
+    document.getElementById('eccVal').textContent = state.eccentricity + ' mm';
+  });
+  elStrRad.addEventListener('input', e => {
+    state.stringRadius = parseFloat(e.target.value);
+    document.getElementById('strRadVal').textContent = state.stringRadius + ' mm';
+  });
+  elGap.addEventListener('input', e => {
+    state.plateGap = parseFloat(e.target.value);
+    document.getElementById('gapVal').textContent = state.plateGap + ' mm';
+  });
+  elShape.addEventListener('change', e => {
+    state.camShape = e.target.value;
+  });
+
+  document.getElementById('viewFull').addEventListener('click', function() {
+    this.classList.add('active');
+    document.getElementById('viewCam').classList.remove('active');
+    state.targetZoom = 1.05;
+    state.targetPanX = 0;
+    state.targetPanY = -40;
+    state.targetPitch = 0.32;
+  });
+
+  document.getElementById('viewCam').addEventListener('click', function() {
+    this.classList.add('active');
+    document.getElementById('viewFull').classList.remove('active');
+    state.targetZoom = 2.35;
+    state.targetPanX = 0;
+    state.targetPanY = 175;
+    state.targetPitch = 0.44;
+  });
+
+  document.getElementById('togglePause').addEventListener('click', function() {
+    state.paused = !state.paused;
+    this.textContent = state.paused ? 'Resume' : 'Pause';
+  });
+
+  document.getElementById('resetView').addEventListener('click', () => {
+    state.targetYaw = 0.45;
+    state.targetPitch = 0.32;
+    state.targetZoom = 1.05;
+    state.targetPanX = 0;
+    state.targetPanY = -40;
+    document.getElementById('viewFull').classList.add('active');
+    document.getElementById('viewCam').classList.remove('active');
+  });
+
+  // Mouse / Touch Orbit & Pan
+  let isDragging = false;
+  let dragButton = 0;
+  let lastX = 0, lastY = 0;
+
+  canvas.addEventListener('mousedown', e => {
+    isDragging = true;
+    dragButton = e.button;
+    lastX = e.clientX;
+    lastY = e.clientY;
+  });
+  window.addEventListener('mouseup', () => { isDragging = false; });
+  window.addEventListener('mousemove', e => {
+    if (!isDragging) return;
+    const dx = e.clientX - lastX;
+    const dy = e.clientY - lastY;
+    lastX = e.clientX;
+    lastY = e.clientY;
+    if (dragButton === 2 || e.shiftKey) {
+      state.targetPanX += dx;
+      state.targetPanY += dy;
+    } else {
+      state.targetYaw += dx * 0.007;
+      state.targetPitch = Math.max(-1.35, Math.min(1.35, state.targetPitch + dy * 0.007));
+    }
+  });
+  canvas.addEventListener('contextmenu', e => e.preventDefault());
+  canvas.addEventListener('wheel', e => {
+    e.preventDefault();
+    const factor = e.deltaY > 0 ? 0.92 : 1.08;
+    state.targetZoom = Math.max(0.45, Math.min(4.2, state.targetZoom * factor));
+  }, { passive: false });
+
+  // Touch support
+  let lastTouchDist = 0;
+  canvas.addEventListener('touchstart', e => {
+    if (e.touches.length === 1) {
+      isDragging = true;
+      lastX = e.touches[0].clientX;
+      lastY = e.touches[0].clientY;
+    } else if (e.touches.length === 2) {
+      lastTouchDist = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY
+      );
+    }
+  }, { passive: true });
+  canvas.addEventListener('touchmove', e => {
+    if (e.touches.length === 1 && isDragging) {
+      const dx = e.touches[0].clientX - lastX;
+      const dy = e.touches[0].clientY - lastY;
+      lastX = e.touches[0].clientX;
+      lastY = e.touches[0].clientY;
+      state.targetYaw += dx * 0.008;
+      state.targetPitch = Math.max(-1.35, Math.min(1.35, state.targetPitch + dy * 0.008));
+    } else if (e.touches.length === 2) {
+      const dist = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY
+      );
+      if (lastTouchDist > 0) {
+        state.targetZoom = Math.max(0.45, Math.min(4.2, state.targetZoom * (dist / lastTouchDist)));
+      }
+      lastTouchDist = dist;
+    }
+  }, { passive: true });
+  canvas.addEventListener('touchend', () => { isDragging = false; lastTouchDist = 0; });
+
+  // 3D Projection helper (Y is UP)
+  function project(x, y, z) {
+    // Rotate around Y (yaw)
+    const cy = Math.cos(state.yaw);
+    const sy = Math.sin(state.yaw);
+    const x1 = x * cy - z * sy;
+    const z1 = x * sy + z * cy;
+
+    // Rotate around X (pitch)
+    const cp = Math.cos(state.pitch);
+    const sp = Math.sin(state.pitch);
+    const y2 = y * cp - z1 * sp;
+    const z2 = y * sp + z1 * cp;
+
+    const fov = 780;
+    const dist = 720;
+    const scale = (fov / (fov + z2 + dist)) * state.zoom * 1.65;
+    return {
+      x: width * 0.5 + state.panX + x1 * scale,
+      y: height * 0.5 + state.panY - y2 * scale,
+      z: z2,
+      scale: scale
+    };
+  }
+
+  // Cam radius at given world angle theta and ring index (0..8)
+  function getCamPush(theta, ringIdx) {
+    const baseR = state.stringRadius - 6;
+    const ecc = state.eccentricity;
+    const phase = state.angle;
+    let r = baseR;
+
+    if (state.camShape === 'circle') {
+      // Off-center circle of radius baseR shifted by ecc along phase
+      const cx = ecc * Math.cos(phase);
+      const cz = ecc * Math.sin(phase);
+      const ux = Math.cos(theta);
+      const uz = Math.sin(theta);
+      const b = cx * ux + cz * uz;
+      const c = cx * cx + cz * cz - baseR * baseR;
+      const disc = b * b - c;
+      r = disc > 0 ? b + Math.sqrt(disc) : baseR;
+    } else if (state.camShape === 'oval') {
+      r = baseR + ecc * 0.78 * Math.cos(2 * (theta - phase));
+    } else if (state.camShape === 'trilobe') {
+      r = baseR + ecc * 0.65 * Math.cos(3 * (theta - phase));
+    } else if (state.camShape === 'spiral') {
+      // Phase shifts by ring index to create concentric wave
+      const ringLag = ringIdx * 0.42;
+      r = baseR + ecc * 0.85 * Math.cos(theta - phase + ringLag);
+    }
+
+    const push = Math.max(0, r - state.stringRadius);
+    return { camR: r, push: push };
+  }
+
+  // Draw a 3D ring/disk polygon
+  function drawCircle3D(y, radius, segments, fill, stroke, lineWidth = 1.5, tiltNormal = null) {
+    const pts = [];
+    for (let i = 0; i < segments; i++) {
+      const a = (i / segments) * Math.PI * 2;
+      let px = Math.cos(a) * radius;
+      let pz = Math.sin(a) * radius;
+      let py = y;
+      if (tiltNormal) {
+        // Project onto tilted plane defined by normal (nx, ny, nz)
+        py = y - (px * tiltNormal.nx + pz * tiltNormal.nz) / tiltNormal.ny;
+      }
+      pts.push(project(px, py, pz));
+    }
+    ctx.beginPath();
+    ctx.moveTo(pts[0].x, pts[0].y);
+    for (let i = 1; i < pts.length; i++) {
+      ctx.lineTo(pts[i].x, pts[i].y);
+    }
+    ctx.closePath();
+    if (fill) {
+      ctx.fillStyle = fill;
+      ctx.fill();
+    }
+    if (stroke) {
+      ctx.strokeStyle = stroke;
+      ctx.lineWidth = lineWidth;
+      ctx.stroke();
+    }
+  }
+
+  // Draw thick wooden ring band (top + bottom edge for 3D depth)
+  function drawWoodRing(y, radius, thickness, heightThick, tiltNormal = null, highlight = false) {
+    const segs = 64;
+    const outerR = radius + thickness * 0.5;
+    const innerR = Math.max(4, radius - thickness * 0.5);
+
+    const topOuter = [], topInner = [], botOuter = [];
+    for (let i = 0; i <= segs; i++) {
+      const a = (i / segs) * Math.PI * 2;
+      const ca = Math.cos(a), sa = Math.sin(a);
+
+      let ox = ca * outerR, oz = sa * outerR;
+      let ix = ca * innerR, iz = sa * innerR;
+      let oy = y + heightThick * 0.5;
+      let iy = y + heightThick * 0.5;
+      let by = y - heightThick * 0.5;
+
+      if (tiltNormal) {
+        oy = y + heightThick * 0.5 - (ox * tiltNormal.nx + oz * tiltNormal.nz) / tiltNormal.ny;
+        iy = y + heightThick * 0.5 - (ix * tiltNormal.nx + iz * tiltNormal.nz) / tiltNormal.ny;
+        by = y - heightThick * 0.5 - (ox * tiltNormal.nx + oz * tiltNormal.nz) / tiltNormal.ny;
+      }
+
+      topOuter.push(project(ox, oy, oz));
+      topInner.push(project(ix, iy, iz));
+      botOuter.push(project(ox, by, oz));
+    }
+
+    // Side thickness band
+    ctx.beginPath();
+    for (let i = 0; i <= segs; i++) {
+      if (i === 0) ctx.moveTo(topOuter[i].x, topOuter[i].y);
+      else ctx.lineTo(topOuter[i].x, topOuter[i].y);
+    }
+    for (let i = segs; i >= 0; i--) {
+      ctx.lineTo(botOuter[i].x, botOuter[i].y);
+    }
+    ctx.closePath();
+    ctx.fillStyle = highlight ? '#9a6b3b' : '#7c532b';
+    ctx.fill();
+
+    // Top face annulus
+    ctx.beginPath();
+    for (let i = 0; i <= segs; i++) {
+      if (i === 0) ctx.moveTo(topOuter[i].x, topOuter[i].y);
+      else ctx.lineTo(topOuter[i].x, topOuter[i].y);
+    }
+    for (let i = segs; i >= 0; i--) {
+      ctx.lineTo(topInner[i].x, topInner[i].y);
+    }
+    ctx.closePath();
+    ctx.fillStyle = highlight ? '#d4a36a' : '#b88650';
+    ctx.fill();
+    ctx.strokeStyle = '#5c3b1c';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
+
+  function render() {
+    // Smooth camera lerp
+    state.yaw += (state.targetYaw - state.yaw) * 0.14;
+    state.pitch += (state.targetPitch - state.pitch) * 0.14;
+    state.zoom += (state.targetZoom - state.zoom) * 0.14;
+    state.panX += (state.targetPanX - state.panX) * 0.14;
+    state.panY += (state.targetPanY - state.panY) * 0.14;
+
+    if (!state.paused) {
+      state.angle += 0.025 * state.speed;
+    }
+
+    ctx.clearRect(0, 0, width, height);
+
+    // Subtle radial background glow
+    const bgGrad = ctx.createRadialGradient(width * 0.5, height * 0.45, 40, width * 0.5, height * 0.5, Math.max(width, height) * 0.7);
+    bgGrad.addColorStop(0, '#1e222b');
+    bgGrad.addColorStop(1, '#111317');
+    ctx.fillStyle = bgGrad;
+    ctx.fillRect(0, 0, width, height);
+
+    // Coordinate layout (Y up)
+    const topPlateY = 190;
+    const bottomPlateY = topPlateY - state.plateGap;
+    const camY = topPlateY - Math.min(48, state.plateGap * 0.34);
+    const plateRadius = Math.max(state.stringRadius + 36, 118);
+
+    // 9 concentric rings below bottom guide plate
+    const numRings = 9;
+    const baseRingDrop = bottomPlateY - 125;
+    const ringStepY = 11; // slight cascading elevation at rest
+
+    // Precompute all 27 strings and ring poses
+    const ringData = [];
+    for (let r = 0; r < numRings; r++) {
+      // r = 0 is innermost, r = 8 is outermost
+      const ringRadius = 26 + r * 17.5;
+      const restY = baseRingDrop - (numRings - 1 - r) * ringStepY;
+      // Slight angular stagger per ring so all 27 anchor holes sit neatly around the circle
+      const baseTheta = (r / numRings) * (Math.PI * 2 / 3);
+
+      const suspPoints = [];
+      for (let s = 0; s < 3; s++) {
+        const theta = baseTheta + s * (Math.PI * 2 / 3);
+        const { push } = getCamPush(theta, r);
+
+        // Geometric string shortening:
+        // String goes from top anchor (r = stringRadius, y = topPlateY)
+        // past cam at (r = stringRadius + push, y = camY)
+        // through bottom fairlead (r = stringRadius, y = bottomPlateY)
+        const d1 = topPlateY - camY;
+        const d2 = camY - bottomPlateY;
+        const straightLen = d1 + d2;
+        const bentLen = Math.hypot(push, d1) + Math.hypot(push, d2);
+        const lift = (bentLen - straightLen) * 2.4; // scaled mechanical gain for clear visual feedback
+
+        const targetY = restY + lift;
+        suspPoints.push({
+          theta,
+          push,
+          lift,
+          ringX: Math.cos(theta) * ringRadius,
+          ringZ: Math.sin(theta) * ringRadius,
+          ringY: targetY,
+          anchorX: Math.cos(theta) * state.stringRadius,
+          anchorZ: Math.sin(theta) * state.stringRadius,
+          camX: Math.cos(theta) * (state.stringRadius + push),
+          camZ: Math.sin(theta) * (state.stringRadius + push)
+        });
+      }
+
+      // Fit plane through the 3 lifted suspension points
+      const p0 = suspPoints[0], p1 = suspPoints[1], p2 = suspPoints[2];
+      const v1x = p1.ringX - p0.ringX, v1y = p1.ringY - p0.ringY, v1z = p1.ringZ - p0.ringZ;
+      const v2x = p2.ringX - p0.ringX, v2y = p2.ringY - p0.ringY, v2z = p2.ringZ - p0.ringZ;
+      let nx = v1y * v2z - v1z * v2y;
+      let ny = v1z * v2x - v1x * v2z;
+      let nz = v1x * v2y - v1y * v2x;
+      if (ny < 0) { nx = -nx; ny = -ny; nz = -nz; }
+      const len = Math.hypot(nx, ny, nz) || 1;
+      nx /= len; ny /= len; nz /= len;
+
+      const centerY = (p0.ringY + p1.ringY + p2.ringY) / 3;
+      ringData.push({
+        index: r,
+        radius: ringRadius,
+        centerY,
+        normal: { nx, ny, nz },
+        suspPoints
+      });
+    }
+
+    // 1. Draw Bottom Stationary Circular Guide Plate (translucent/cutaway feel so strings remain visible)
+    drawWoodRing(bottomPlateY, plateRadius - 6, 22, 8, null, false);
+    drawCircle3D(bottomPlateY + 4, plateRadius - 17, 64, 'rgba(165, 118, 72, 0.25)', 'rgba(212, 163, 106, 0.55)', 1.2);
+
+    // 2. Draw 3 Outer Vertical Support Poles connecting Top & Bottom Plates
+    const poleRadius = plateRadius - 10;
+    for (let p = 0; p < 3; p++) {
+      const pa = (p * Math.PI * 2) / 3 + Math.PI / 6;
+      const px = Math.cos(pa) * poleRadius;
+      const pz = Math.sin(pa) * poleRadius;
+      const topP = project(px, topPlateY, pz);
+      const botP = project(px, bottomPlateY, pz);
+
+      ctx.beginPath();
+      ctx.moveTo(topP.x, topP.y);
+      ctx.lineTo(botP.x, botP.y);
+      ctx.strokeStyle = '#8c5e32';
+      ctx.lineWidth = Math.max(4, 7 * topP.scale);
+      ctx.lineCap = 'round';
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.moveTo(topP.x, topP.y);
+      ctx.lineTo(botP.x, botP.y);
+      ctx.strokeStyle = '#c99763';
+      ctx.lineWidth = Math.max(1.5, 2.5 * topP.scale);
+      ctx.stroke();
+    }
+
+    // 3. Draw Rotating Eccentric Cam + Outer Low-Friction Bearing Rim
+    const camSegs = 72;
+    const camOuterPts = [];
+    const camInnerPts = [];
+    for (let i = 0; i <= camSegs; i++) {
+      const a = (i / camSegs) * Math.PI * 2;
+      const { camR } = getCamPush(a, 0);
+      const cx = Math.cos(a) * camR;
+      const cz = Math.sin(a) * camR;
+      camOuterPts.push(project(cx, camY, cz));
+
+      const ix = Math.cos(a) * Math.max(8, camR - 6);
+      const iz = Math.sin(a) * Math.max(8, camR - 6);
+      camInnerPts.push(project(ix, camY, iz));
+    }
+
+    // Cam wood body
+    ctx.beginPath();
+    for (let i = 0; i <= camSegs; i++) {
+      if (i === 0) ctx.moveTo(camInnerPts[i].x, camInnerPts[i].y);
+      else ctx.lineTo(camInnerPts[i].x, camInnerPts[i].y);
+    }
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(184, 134, 80, 0.85)';
+    ctx.fill();
+
+    // Outer Steel Bearing Rim (No-drag ring)
+    ctx.beginPath();
+    for (let i = 0; i <= camSegs; i++) {
+      if (i === 0) ctx.moveTo(camOuterPts[i].x, camOuterPts[i].y);
+      else ctx.lineTo(camOuterPts[i].x, camOuterPts[i].y);
+    }
+    ctx.closePath();
+    ctx.strokeStyle = '#cbd5e1';
+    ctx.lineWidth = 4;
+    ctx.stroke();
+
+    // Visual marker dot on cam to show rotation speed
+    const dotAngle = state.angle;
+    const dotInfo = getCamPush(dotAngle, 0);
+    const dotProj = project(
+      Math.cos(dotAngle) * (dotInfo.camR - 12),
+      camY + 1,
+      Math.sin(dotAngle) * (dotInfo.camR - 12)
+    );
+    ctx.beginPath();
+    ctx.arc(dotProj.x, dotProj.y, Math.max(2.5, 4 * dotProj.scale), 0, Math.PI * 2);
+    ctx.fillStyle = '#eab308';
+    ctx.fill();
+
+    // Central Motor & Shaft
+    const motorTop = project(0, topPlateY + 26, 0);
+    const shaftBot = project(0, camY - 12, 0);
+    ctx.beginPath();
+    ctx.moveTo(motorTop.x, motorTop.y);
+    ctx.lineTo(shaftBot.x, shaftBot.y);
+    ctx.strokeStyle = '#94a3b8';
+    ctx.lineWidth = Math.max(3, 5 * motorTop.scale);
+    ctx.stroke();
+
+    // Motor housing cylinder above top plate
+    drawCircle3D(topPlateY + 22, 18, 32, '#334155', '#64748b', 1.5);
+    drawCircle3D(topPlateY + 8, 18, 32, '#1e293b', '#475569', 1.5);
+
+    // 4. Draw All 27 Strings & Eyelets
+    for (let r = 0; r < numRings; r++) {
+      const rd = ringData[r];
+      for (let s = 0; s < 3; s++) {
+        const sp = rd.suspPoints[s];
+        const pTop = project(sp.anchorX, topPlateY, sp.anchorZ);
+        const pCam = project(sp.camX, camY, sp.camZ);
+        const pBot = project(sp.anchorX, bottomPlateY, sp.anchorZ);
+        const pRing = project(sp.ringX, sp.ringY, sp.ringZ);
+
+        const isDeflected = sp.push > 0.5;
+
+        // Upper segment (Top Anchor -> Cam -> Bottom Fairlead)
+        ctx.beginPath();
+        ctx.moveTo(pTop.x, pTop.y);
+        ctx.lineTo(pCam.x, pCam.y);
+        ctx.lineTo(pBot.x, pBot.y);
+        ctx.strokeStyle = isDeflected ? '#facc15' : 'rgba(226, 232, 240, 0.55)';
+        ctx.lineWidth = isDeflected ? 1.8 : 1.1;
+        ctx.stroke();
+
+        // Lower segment (Bottom Fairlead -> Ring attachment)
+        ctx.beginPath();
+        ctx.moveTo(pBot.x, pBot.y);
+        ctx.lineTo(pRing.x, pRing.y);
+        ctx.strokeStyle = isDeflected ? 'rgba(250, 204, 21, 0.85)' : 'rgba(203, 213, 225, 0.42)';
+        ctx.lineWidth = isDeflected ? 1.5 : 1.0;
+        ctx.stroke();
+
+        // Top Anchor Knot dot
+        ctx.beginPath();
+        ctx.arc(pTop.x, pTop.y, Math.max(1.8, 2.6 * pTop.scale), 0, Math.PI * 2);
+        ctx.fillStyle = '#f8fafc';
+        ctx.fill();
+
+        // Bottom Fairlead Brass Eyelet ring
+        ctx.beginPath();
+        ctx.arc(pBot.x, pBot.y, Math.max(2.0, 3.0 * pBot.scale), 0, Math.PI * 2);
+        ctx.strokeStyle = '#eab308';
+        ctx.lineWidth = 1.4;
+        ctx.stroke();
+      }
+    }
+
+    // 5. Draw Top Solid Circular Anchor Plate (semi-transparent center so cam/strings inside are clear)
+    drawWoodRing(topPlateY, plateRadius - 6, 22, 8, null, true);
+    drawCircle3D(topPlateY + 4, plateRadius - 17, 64, 'rgba(212, 163, 106, 0.16)', 'rgba(212, 163, 106, 0.45)', 1.2);
+
+    // 6. Draw the 9 Concentric Wooden Rings (sorted back-to-front by center Z or outer-to-inner)
+    for (let r = numRings - 1; r >= 0; r--) {
+      const rd = ringData[r];
+      drawWoodRing(rd.centerY, rd.radius, 8.5, 6.5, rd.normal, r % 2 === 0);
+    }
+
+    requestAnimationFrame(render);
+  }
+
+  requestAnimationFrame(render);
+})();
+</script>
+</body>
+</html>
